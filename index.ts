@@ -1,5 +1,5 @@
 /**
- * pi-dev-workflow — v6
+ * pi-dev-workflow
  *
  * Pipeline: Write → Test → Review → Fix → Verify → Done
  *
