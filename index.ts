@@ -1,15 +1,18 @@
 /**
- * Context-Isolated Workflow Extension — v4
+ * Context-Isolated Workflow Extension — v5
  *
  * Pipeline: Write → Test → Review → Fix → Verify → Done
  *
  * Modes:
- *   /workflow [name] <spec>           — full cycle
+ *   /workflow [name] <spec>           — full cycle (coverage ≥80%)
  *   /workflow [name] quick <spec>     — skip review
- *   /workflow [name] strict <spec>    — 90% coverage required
+ *   /workflow [name] strict <spec>    — coverage ≥90% required
  *
- * Creates: projects/<name>/src/  +  projects/<name>/tests/
- * Outputs: projects/<name>/README.md, POSTMORTEM.md (on failure)
+ * Creates: <base>/<name>/src/  +  <base>/<name>/tests/
+ * Outputs: <base>/<name>/README.md, POSTMORTEM.md (on failure), CHANGELOG.md
+ *
+ * Default base: projects/
+ * Custom base via: in @path  or  at @path
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -69,8 +72,6 @@ const gitCommit = async (message: string) => {
 	} catch { /* best-effort */ }
 };
 
-// ---- Extension ----
-
 export default function (pi: ExtensionAPI) {
 	let workflow: Workflow | null = null;
 
@@ -120,29 +121,24 @@ export default function (pi: ExtensionAPI) {
 		description: "/workflow [name] [quick|strict] <spec>",
 		handler: async (args, ctx) => {
 			let raw = (args || "").trim();
-			ctx.ui.notify(`DEBUG raw args: "${raw}"`, "info");
 			let mode: WorkflowMode = "default";
 			let projectName = "";
+			let customDir = "";
 
 			// Parse mode
 			const modeMatch = raw.match(/^(quick|strict)\b/i);
 			if (modeMatch) { mode = modeMatch[1].toLowerCase() as WorkflowMode; raw = raw.slice(modeMatch[0].length).trim(); }
 
 			// Extract custom directory: "in <path>" or "at <path>"
-			let customDir = "";
 			const pathMatch = raw.match(/(?:in|at|to|into)\s+((?:@|\/|~\/)[a-zA-Z0-9_\/.-]+)/i);
-			if (pathMatch) {
-				customDir = pathMatch[1]; // @PI_EXTENSIONS/tests or /Users/.../PI_EXTENSIONS/tests
-				raw = raw.replace(pathMatch[0], "").trim();
-			}
+			if (pathMatch) { customDir = pathMatch[1]; raw = raw.replace(pathMatch[0], "").trim(); }
 
 			// Parse project name (skips prepositions/common verbs, requires 3+ chars)
 			const skipWords = new Set(["a", "an", "the", "in", "at", "to", "for", "of",
 				"create", "build", "make", "add", "implement", "write", "use"]);
 			const nameMatch = raw.match(/^([a-zA-Z][a-zA-Z0-9_-]{2,})\b/);
 			if (nameMatch && !skipWords.has(nameMatch[1].toLowerCase())) {
-				projectName = nameMatch[1];
-				raw = raw.slice(nameMatch[0].length).trim();
+				projectName = nameMatch[1]; raw = raw.slice(nameMatch[0].length).trim();
 			}
 
 			let spec = raw;
@@ -157,8 +153,6 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (!projectName) projectName = generateName(spec);
-			// Strip @ prefix — pi shorthand, not a real filesystem path.
-			// Append project name so all files nest under one directory.
 			const base = customDir ? customDir.replace(/^@/, "").replace(/\/+$/, "") : "projects";
 			const projectDir = `${base}/${projectName}`;
 
@@ -167,8 +161,7 @@ export default function (pi: ExtensionAPI) {
 				const { mkdir, writeFile } = await import("node:fs/promises");
 				await mkdir(`${projectDir}/src`, { recursive: true });
 				await mkdir(`${projectDir}/tests`, { recursive: true });
-				const pkg = { name: projectName, private: true, type: "module" };
-				await writeFile(`${projectDir}/package.json`, JSON.stringify(pkg, null, 2), "utf-8");
+				await writeFile(`${projectDir}/package.json`, JSON.stringify({ name: projectName, private: true, type: "module" }, null, 2), "utf-8");
 			} catch { /* best-effort */ }
 
 			workflow = {
@@ -180,30 +173,26 @@ export default function (pi: ExtensionAPI) {
 			};
 			updateStatus(ctx);
 
-			const skipReview = mode === "quick" ? " (review skipped)" : "";
 			pi.sendMessage({ customType: "context-workflow", display: true, content: [
 				"🚀 **Workflow Started**" + (mode !== "default" ? ` [${mode}]` : ""),
 				"",
 				`**Project**: \`${projectName}\` → \`${projectDir}/\``,
 				"",
 				"**Spec:**", "```", spec, "```", "",
-				`**Pipeline:** Write → Test${mode !== "quick" ? " → Review → Fix" : ""} → Verify → Done${skipReview}`,
+				`**Pipeline:** Write → Test${mode !== "quick" ? " → Review → Fix" : ""} → Verify → Done`,
 				mode === "strict" ? "**Gate:** 90% coverage required" : "",
 				"",
 				`**Stage 1: ${STAGE_DESCRIPTIONS.write}**`,
 			].join("\n") });
 
-			pi.sendUserMessage(
-				[
-					`Implement this feature inside \`${projectDir}/\`. First \`cd ${projectDir}\`, then create:`,
-					`- \`src/<module>.ts\` — implementation`,
-					`- \`tests/<module>.test.ts\` — vitest tests`,
-					"",
-					"Run \`npm install\` inside the project dir if deps needed. Keep ALL artifacts within \`${projectDir}/\`.",
-					"Create comprehensive tests. When done, call workflow_next.",
-				].join("\n"),
-				{ deliverAs: "followUp" },
-			);
+			pi.sendUserMessage([
+				`Implement this feature inside \`${projectDir}/\`. First \`cd ${projectDir}\`, then create:`,
+				`- \`src/<module>.ts\` — implementation`,
+				`- \`tests/<module>.test.ts\` — vitest tests`,
+				"",
+				"Run `npm install` inside the project dir if deps needed. Keep ALL artifacts within the project dir.",
+				"Create comprehensive tests. When done, call workflow_next.",
+			].join("\n"), { deliverAs: "followUp" });
 		},
 	});
 
@@ -211,15 +200,12 @@ export default function (pi: ExtensionAPI) {
 		description: "Check workflow status",
 		handler: async (_args, ctx) => {
 			if (!workflow?.active) { ctx.ui.notify("No active workflow", "info"); return; }
-			const tc = workflow.typeCheckPassed ? "✅" : "❌";
-			const ln = workflow.lintPassed ? "✅" : "❌";
 			const cv = workflow.coveragePct != null ? `${workflow.coveragePct}%` : "—";
 			const modeLabel = workflow.mode !== "default" ? ` [${workflow.mode}]` : "";
 			pi.sendMessage({ customType: "context-workflow", display: true, content: [
 				`**Project**: \`${workflow.projectName}\`  |  **Stage**: ${STAGE_DESCRIPTIONS[workflow.stage]}${modeLabel}`,
 				`**Iteration**: ${workflow.iteration}/${workflow.maxIterations}`,
-				`**Tests**: ${workflow.testsPassed ? "✅" : "❌"}  |  TS: ${tc}  |  Lint: ${ln}  |  Cov: ${cv} (≥${workflow.coverageThreshold}%)`,
-				`**Issues**: ${workflow.reviewIssues.length}`,
+				`**Tests**: ${workflow.testsPassed ? "✅" : "❌"}  |  Cov: ${cv} (≥${workflow.coverageThreshold}%)  |  Issues: ${workflow.reviewIssues.length}`,
 			].join("\n") });
 		},
 	});
@@ -250,8 +236,7 @@ export default function (pi: ExtensionAPI) {
 					const { writeFile } = await import("node:fs/promises");
 					await writeFile(`${workflow.projectDir}/POSTMORTEM.md`, pm, "utf-8");
 				} catch { /* best-effort */ }
-				pi.sendMessage({ customType: "context-workflow", display: true, content: pm });
-				return { content: [{ type: "text", text: "⚠️ Maximum iterations reached. Post-mortem generated." }], details: { workflow } };
+				return { content: [{ type: "text", text: pm }], details: { workflow } };
 			}
 
 			let ns: WorkflowStage, msg: string, np: string | null = null, cm: string | null = null;
@@ -260,24 +245,22 @@ export default function (pi: ExtensionAPI) {
 			switch (workflow.stage) {
 				case "write":
 					ns = "test"; msg = "✅ Code written!\n\n**Stage 2: 🧪 Testing**";
-					np = `Run the test suite: \`cd ${workflow.projectDir} && npx vitest run\`. Call workflow_test_result with exit code.`;
+					np = `Run the test suite: \`cd ${workflow.projectDir} && npx vitest run tests/\`. Call workflow_test_result with exit code.`;
 					cm = `wip: ${workflow.projectName} — implementation + tests`;
 					logStep("write", true, params.notes || "Implementation written");
 					break;
-
 				case "test":
 					if (workflow.testsPassed) {
 						logStep("test", true, "Tests passing");
 						if (isQuick) {
-							ns = "verify"; msg = "✅ Tests passed! (quick mode)\n\n**Stage 3: ✅ Verification**";
-							np = `Run verification: \`cd ${workflow.projectDir} && npx vitest run\` → workflow_test_result, then \`cd ${workflow.projectDir} && npx vitest run --coverage\` → workflow_verify_result (coveragePct). Then call workflow_complete with summary.`;
+							ns = "verify"; msg = "✅ Tests passed! (quick)\n\n**Stage 3: ✅ Verification**";
+							np = "Run verification: tests → workflow_test_result, then coverage → workflow_verify_result. Then call workflow_complete with summary.";
 						} else {
 							ns = "review"; msg = "✅ Tests passed!\n\n**Stage 3: 🔍 Review**";
 							const checklist = buildChecklist(workflow.spec);
-							np = "Review the code with fresh eyes. Read all created files and check for:\n" +
-								"1) Code quality & readability\n2) Test coverage\n3) Edge cases\n4) Error handling\n5) Best practices\n" +
-								(checklist.length > 0 ? `\n**Domain-specific checks:**\n${checklist.map(c => `- ${c}`).join("\n")}\n` : "") +
-								"\nCall workflow_review_result with findings.";
+							np = "Review the code with fresh eyes. Read all created files and check for:\n1) Code quality & readability\n2) Test coverage\n3) Edge cases\n4) Error handling\n5) Best practices" +
+								(checklist.length > 0 ? `\n\n**Domain-specific checks:**\n${checklist.map(c => `- ${c}`).join("\n")}` : "") +
+								"\n\nCall workflow_review_result with findings.";
 						}
 					} else {
 						logStep("test", false, "Tests failing");
@@ -286,12 +269,11 @@ export default function (pi: ExtensionAPI) {
 					}
 					cm = "test: all passing";
 					break;
-
 				case "review":
 					if (workflow.reviewIssues.length === 0) {
 						logStep("review", true, "No issues found");
 						ns = "verify"; msg = "✅ Review passed!\n\n**Stage 5: ✅ Verification**";
-						np = `Run verification: \`cd ${workflow.projectDir} && npx vitest run\` → workflow_test_result, then \`cd ${workflow.projectDir} && npx vitest run --coverage\` → workflow_verify_result (coveragePct).` +
+						np = `Run verification: \`cd ${workflow.projectDir}\`, then tests → workflow_test_result, then \`npx vitest run --coverage\` → workflow_verify_result (coveragePct).` +
 							(workflow.mode === "strict" ? " ⚠️ STRICT: coverage ≥90% required." : "") +
 							"\n\nThen call workflow_complete with summary.";
 					} else {
@@ -300,19 +282,15 @@ export default function (pi: ExtensionAPI) {
 						np = `Fix these review issues:\n${workflow.reviewIssues.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\nCall workflow_next to re-test.`;
 					}
 					break;
-
 				case "fix":
 					logStep("fix", true, params.notes || "Fixes applied");
 					ns = "test"; msg = "🔧 Fixes applied!\n\n**Stage 2: 🧪 Re-testing**";
 					np = "Run tests again to verify fixes. Call workflow_test_result.";
 					cm = `fix: ${workflow.projectName} — address review feedback`;
 					break;
-
 				case "verify":
-					// Don't set active=false — let workflow_complete handle it
 					ns = "done"; msg = "🎉 All gates passed!\n\nCall workflow_complete with summary to finalize.";
 					break;
-
 				default: ns = "done"; msg = "✅ Complete";
 			}
 
@@ -383,74 +361,56 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, p, _sig, _up, ctx) {
 			if (!workflow?.active) return { content: [{ type: "text", text: "No active workflow — start one with /workflow <spec>" }], details: {} };
 
-			const w = workflow; // snapshot
+			const w = workflow!;
 			w.stage = "done"; w.active = false; updateStatus(ctx);
 
 			const issues = extractIssues(w.spec);
-			const tc = w.typeCheckPassed ? "✅" : "❌";
-			const ln = w.lintPassed ? "✅" : "❌";
 			const cv = w.coveragePct != null ? `${w.coveragePct}%` : "—";
 			const covMet = w.coveragePct != null && w.coveragePct >= w.coverageThreshold;
-			const allGates = w.testsPassed && covMet;
 
-			// Build completion message (shown as tool result)
-			const banner = [
-				"",
-				"═══ WORKFLOW COMPLETE ═══",
-				"",
-				`Project: ${w.projectName}`,
-				`${p.summary}`,
-				"",
-				`Mode: ${w.mode}  |  Iterations: ${w.iteration}`,
-				`Tests: ${w.testsPassed ? "✅ Passed" : "❌ Failed"}`,
-				`Type-check: ${tc}  |  Lint: ${ln}  |  Coverage: ${cv}${covMet ? "" : " ⚠️"}`,
-				`Review issues: ${w.reviewIssues.length} found, resolved`,
-				...(issues.length > 0 ? [`Linked: ${issues.join(", ")}`] : []),
-				"",
-				`📄 README: ${w.projectDir}/README.md`,
-				"",
-				"Start another with `/workflow [name] [quick|strict] <spec>`",
-				"═══════════════════════════",
-			].join("\n");
+			// Build completion banner as a string (shown via pi.sendMessage after tool returns)
+			const banner = `\n` +
+				`═══ WORKFLOW COMPLETE ═══\n` +
+				`\n` +
+				`Project: ${w.projectName}\n` +
+				`${p.summary}\n` +
+				`\n` +
+				`Mode: ${w.mode}  |  Iterations: ${w.iteration}\n` +
+				`Tests: ${w.testsPassed ? "✅ Passed" : "❌ Failed"}\n` +
+				`Coverage: ${cv}${covMet ? "" : " ⚠️"}  |  Threshold: ≥${w.coverageThreshold}%\n` +
+				`Review issues: ${w.reviewIssues.length} found, resolved\n` +
+				`${issues.length > 0 ? `Linked: ${issues.join(", ")}\n` : ""}` +
+				`\n` +
+				`📄 README: ${w.projectDir}/README.md\n` +
+				`${issues.length > 0 ? `📋 CHANGELOG: updated (${issues.join(", ")})\n` : ""}` +
+				`\n` +
+				`Start another with \`/workflow [name] [quick|strict] <spec>\`\n` +
+				`═══════════════════════════`;
 
-			// Also send as display message (renders in chat if supported)
-			pi.sendMessage({
-				customType: "context-workflow",
-				display: true,
-				content: banner,
-			});
+			// Schedule the banner to appear as the LAST message after the tool result
+			setTimeout(() => {
+				pi.sendMessage({ customType: "context-workflow", display: true, content: banner });
+			}, 200);
 
-			// ---- README.md ----
+			// README.md
 			try {
 				const { writeFile } = await import("node:fs/promises");
-				const readme = [
-					`# ${w.projectName}`,
-					"",
-					"## Summary",
-					p.summary,
-					"",
-					"## Spec",
-					"```",
-					w.spec,
-					"```",
-					"",
+				await writeFile(`${w.projectDir}/README.md`, [
+					`# ${w.projectName}`, "", "## Summary", p.summary, "",
+					"## Spec", "```", w.spec, "```", "",
 					"## Results",
-					`| Gate | Status | Threshold |`,
-					`|------|--------|-----------|`,
+					"| Gate | Status | Threshold |",
+					"|------|--------|-----------|",
 					`| Tests | ${w.testsPassed ? "✅ Pass" : "❌ Fail"} | — |`,
-					`| Type-check | ${w.typeCheckPassed ? "✅ Pass" : "❌ Fail"} | — |`,
-					`| Lint | ${w.lintPassed ? "✅ Pass" : "❌ Fail"} | — |`,
 					`| Coverage | ${cv} | ≥${w.coverageThreshold}% |`,
-					"",
-					"## Stats",
+					"", "## Stats",
 					`- Mode: ${w.mode}  |  Iterations: ${w.iteration}`,
 					`- Review issues: ${w.reviewIssues.length}`,
 					...(issues.length > 0 ? [`- References: ${issues.join(", ")}`] : []),
-				].join("\n");
-				await writeFile(`${w.projectDir}/README.md`, readme, "utf-8");
+				].join("\n"), "utf-8");
 			} catch { /* best-effort */ }
 
-			// ---- Changelog ----
+			// Changelog
 			try {
 				const { appendFile } = await import("node:fs/promises");
 				const date = new Date().toISOString().split("T")[0];
@@ -460,7 +420,8 @@ export default function (pi: ExtensionAPI) {
 
 			gitCommit(`chore: workflow complete — ${w.projectName}`);
 
-			return { content: [{ type: "text", text: banner }], details: { workflow: w, summary: p.summary } };
+			// Return minimal tool result — the banner appears after via sendMessage
+			return { content: [{ type: "text", text: "✅ Done. Summary follows." }], details: { workflow: w, summary: p.summary } };
 		},
 	});
 
@@ -470,29 +431,12 @@ export default function (pi: ExtensionAPI) {
 		if (!workflow?.active) return {};
 		const strictNote = workflow.mode === "strict" ? `  ⚠️ STRICT: coverage ≥${workflow.coverageThreshold}% required` : "";
 		return { systemPrompt: event.systemPrompt + [
-			"", "---", "**🔄 WORKFLOW ACTIVE**",
-			"",
+			"", "---", "**🔄 WORKFLOW ACTIVE**", "",
 			`**Project**: \`${workflow.projectName}\` → \`${workflow.projectDir}/\``,
 			`**Stage**: ${STAGE_DESCRIPTIONS[workflow.stage]} (${workflow.iteration}/${workflow.maxIterations}) [${workflow.mode}]${strictNote}`,
 			`**Spec**: ${workflow.spec.substring(0, 200)}...`,
-			"",
-			"Follow workflow instructions. Call the appropriate tool when done.",
-			"---",
+			"", "Follow workflow instructions. Call the appropriate tool when done.", "---",
 		].join("\n") };
-	});
-
-	// ---- Directory enforcement — all commands scoped to project dir ----
-
-	pi.on("before_agent_start", async (event, _ctx) => {
-		if (!workflow?.active) return;
-		// Inject project-dir context so bash/vitest commands stay scoped
-		event.prompt = [
-			`⚠️ Working directory is \`${workflow.projectDir}\`. ALL file paths and commands must use this as the root.`,
-			`For ANY bash command: \`cd ${workflow.projectDir} && <your command>\`.`,
-			"Never run vitest, npm, or node from outside this directory.",
-			"",
-			event.prompt,
-		].join("\n");
 	});
 
 	// ---- Auto-detect test results ----
@@ -504,10 +448,7 @@ export default function (pi: ExtensionAPI) {
 		if (event.toolName === "bash" && typeof input?.command === "string") {
 			const cmd = input.command.toLowerCase();
 			if (/(pytest|npm test|cargo test|go test|mvn test|vitest)/.test(cmd) && typeof details?.exitCode === "number") {
-				ctx.ui.notify(
-					`Auto-detect: ${details.exitCode === 0 ? "✅ Passed" : "❌ Failed"}`,
-					details.exitCode === 0 ? "info" : "error",
-				);
+				ctx.ui.notify(`Auto-detect: ${details.exitCode === 0 ? "✅ Passed" : "❌ Failed"}`, details.exitCode === 0 ? "info" : "error");
 			}
 		}
 	});
