@@ -310,7 +310,7 @@ export default function (pi: ExtensionAPI) {
 			workflow.testsPassed = p.exitCode === 0;
 			let msg = workflow.testsPassed ? `✅ Tests passed (exit ${p.exitCode})` : `❌ Tests failed (exit ${p.exitCode})`;
 			if (!workflow.testsPassed && p.output) msg += `\n\nOutput:\n${p.output.substring(0, 500)}`;
-			updateStatus(ctx); pi.sendUserMessage("Call workflow_next to progress.", { deliverAs: "followUp" });
+			updateStatus(ctx);
 			return { content: [{ type: "text", text: msg }], details: { workflow, testsPassed: workflow.testsPassed } };
 		},
 	});
@@ -333,7 +333,7 @@ export default function (pi: ExtensionAPI) {
 				const met = p.coveragePct >= (workflow!.coverageThreshold);
 				r.push(`Coverage: ${met ? "✅" : "❌"} ${p.coveragePct}%` + (met ? "" : ` (need ≥${workflow!.coverageThreshold}%)`));
 			}
-			updateStatus(ctx); pi.sendUserMessage("Call workflow_next to progress.", { deliverAs: "followUp" });
+			updateStatus(ctx);
 			return { content: [{ type: "text", text: r.join("\n") }], details: { workflow, ...p } };
 		},
 	});
@@ -349,14 +349,14 @@ export default function (pi: ExtensionAPI) {
 				? "✅ Review passed!"
 				: `📋 ${p.issues.length} issue(s):\n${p.issues.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 			if (p.summary) msg += `\n\n**Summary**: ${p.summary}`;
-			updateStatus(ctx); pi.sendUserMessage("Call workflow_next to progress.", { deliverAs: "followUp" });
+			updateStatus(ctx);
 			return { content: [{ type: "text", text: msg }], details: { workflow, issues: p.issues, summary: p.summary } };
 		},
 	});
 
 	pi.registerTool({
 		name: "workflow_complete", label: "Complete Workflow",
-		description: "Mark workflow complete.",
+		description: "Mark workflow complete. Returns the summary banner as the tool result — this is the final visible output to the user.",
 		parameters: Type.Object({ summary: Type.String() }),
 		async execute(_id, p, _sig, _up, ctx) {
 			if (!workflow?.active) return { content: [{ type: "text", text: "No active workflow — start one with /workflow <spec>" }], details: {} };
@@ -368,7 +368,6 @@ export default function (pi: ExtensionAPI) {
 			const cv = w.coveragePct != null ? `${w.coveragePct}%` : "—";
 			const covMet = w.coveragePct != null && w.coveragePct >= w.coverageThreshold;
 
-			// Build completion banner as a string (shown via pi.sendMessage after tool returns)
 			const banner = `\n` +
 				`═══ WORKFLOW COMPLETE ═══\n` +
 				`\n` +
@@ -386,11 +385,6 @@ export default function (pi: ExtensionAPI) {
 				`\n` +
 				`Start another with \`/workflow [name] [quick|strict] <spec>\`\n` +
 				`═══════════════════════════`;
-
-			// Schedule the banner to appear as the LAST message after the tool result
-			setTimeout(() => {
-				pi.sendMessage({ customType: "context-workflow", display: true, content: banner });
-			}, 200);
 
 			// README.md
 			try {
@@ -420,9 +414,16 @@ export default function (pi: ExtensionAPI) {
 
 			gitCommit(`chore: workflow complete — ${w.projectName}`);
 
-			// Return minimal tool result — banner fires via tool_result handler below
-			w._completePending = true; // signal for tool_result handler
-			return { content: [{ type: "text", text: "✅ Done." }], details: { workflow: w, summary: p.summary } };
+			const summaryBlock = [
+				`✅ **${w.projectName}** is complete`,
+				"",
+				`📁 **Location:** \`${w.projectDir}/\``,
+				w.testsPassed ? "🧪 **Tests:** All passing" : "⚠️ **Tests:** Failing",
+				`📊 **Coverage:** ${cv}${covMet ? " ✓" : " ⚠️ below threshold"} (≥${w.coverageThreshold}% required)`,
+				...(issues.length > 0 ? ["", `Linked: ${issues.join(", ")}`] : []),
+			].join("\n");
+
+			return { content: [{ type: "text", text: summaryBlock }], details: { workflow: w, summary: p.summary } };
 		},
 	});
 
@@ -440,21 +441,11 @@ export default function (pi: ExtensionAPI) {
 		].join("\n") };
 	});
 
-	// ---- Auto-detect test results + completion banner ---
+	// ---- Auto-detect test results ----
 
 	pi.on("tool_result", async (event, ctx) => {
-		if (!workflow?.active && !(workflow as any)?._banner) return;
-
-		// Completion banner: fired when workflow_complete tool returns
-		if (event.toolName === "workflow_complete" && (workflow as any)?._banner) {
-			const banner = (workflow as any)._banner as string;
-			(workflow as any)._banner = undefined;
-			(workflow as any)._completePending = false;
-			pi.sendMessage({ customType: "context-workflow", display: true, content: banner });
-			return;
-		}
-
-		if (!workflow?.active || workflow.stage !== "test") return;
+		if (!workflow?.active) return;
+		if (workflow.stage !== "test") return;
 		const input = event.input as Record<string, unknown> | undefined;
 		const details = event.details as Record<string, unknown> | undefined;
 		if (event.toolName === "bash" && typeof input?.command === "string") {
