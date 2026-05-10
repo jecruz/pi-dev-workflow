@@ -1,4 +1,4 @@
-# pi-context-workflow
+# pi-dev-workflow
 
 Automated code development pipeline for the pi coding agent.
 
@@ -164,8 +164,8 @@ Workflow state persists in session branch entries. Survives context compaction. 
 
 ## Installation
 
-Copy `index.ts` to `~/.pi/agent/extensions/context-workflow.ts`. Restart pi.
+Copy `index.ts` to `~/.pi/agent/extensions/dev-workflow.ts`. Restart pi.
 
 ```bash
-cp index.ts ~/.pi/agent/extensions/context-workflow.ts
+cp index.ts ~/.pi/agent/extensions/dev-workflow.ts
 ```

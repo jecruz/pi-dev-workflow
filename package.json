@@ -1,22 +1,22 @@
 {
-  "name": "@jecruz/pi-context-workflow",
+  "name": "@jecruz/pi-dev-workflow",
   "version": "0.1.0",
-  "description": "Self-driving context-isolated workflow for pi — automated write/test/review/fix/verify cycle with clean review context and deterministic test validation",
+  "description": "Multi-stage development workflow for pi — automated write/test/review/fix/verify cycle with coverage gates and auto-commits",
   "keywords": [
     "pi-package",
     "pi",
     "pi-coding-agent",
     "workflow",
-    "context-isolation",
     "tdd",
     "code-review",
-    "automation"
+    "automation",
+    "pipeline"
   ],
   "license": "MIT",
   "author": "Jeffrey Cruz",
-  "repository": "github.com/jecruz/pi-context-workflow",
+  "repository": "github.com/jecruz/pi-dev-workflow",
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
+    "@mariozechner/pi-coding-agent": "*",
     "@sinclair/typebox": "*"
   },
   "files": [
