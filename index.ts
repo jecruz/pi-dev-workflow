@@ -414,16 +414,16 @@ export default function (pi: ExtensionAPI) {
 
 			gitCommit(`chore: workflow complete — ${w.projectName}`);
 
-			const summaryBlock = [
-				`✅ **${w.projectName}** is complete`,
-				"",
-				`📁 **Location:** \`${w.projectDir}/\``,
-				w.testsPassed ? "🧪 **Tests:** All passing" : "⚠️ **Tests:** Failing",
-				`📊 **Coverage:** ${cv}${covMet ? " ✓" : " ⚠️ below threshold"} (≥${w.coverageThreshold}% required)`,
-				...(issues.length > 0 ? ["", `Linked: ${issues.join(", ")}`] : []),
-			].join("\n");
+		const summaryBlock = [
+			`✅ **${w.projectName}** is complete`,
+			"",
+			`📁 **Location:** \`${w.projectDir}/\``,
+			w.testsPassed ? "🧪 **Tests:** All passing" : "⚠️ **Tests:** Failing",
+			`📊 **Coverage:** ${cv}${covMet ? " ✓" : " ⚠️ below threshold"} (≥${w.coverageThreshold}% required)`,
+			...(issues.length > 0 ? ["", `Linked: ${issues.join(", ")}`] : []),
+		].join("\n");
 
-			return { content: [{ type: "text", text: summaryBlock }], details: { workflow: w, summary: p.summary } };
+		return { content: [{ type: "text", text: summaryBlock }], details: { workflow: w, summary: p.summary } };
 		},
 	});
 
