@@ -75,7 +75,7 @@ Agent addresses review findings. Commits with `fix:` prefix. Returns to test sta
 Agent runs tests + coverage. Must meet coverage threshold (80% default, 90% strict). Gate status shown in completion.
 
 ### 6. Done
-Workflow finalizes — generates completion banner, README, changelog entry, and final commit.
+Workflow finalizes — the completion banner (project name, location, tests, coverage, linked issues) is returned as tool result content from `workflow_complete`. README, changelog entry, and final commit are generated.
 
 ## Directory Structure
 
@@ -146,14 +146,16 @@ Appends to `CHANGELOG.md` on completion:
 
 ## Completion Banner
 
+Returned as tool result content from `workflow_complete`:
+
 ```
-## ✅ Workflow Complete — `markdown-parser`
+✅ **markdown-parser** is complete
 
-**Fixed trailing whitespace in heading extraction**
+📁 **Location:** `projects/markdown-parser/`
+🧪 **Tests:** All passing
+📊 **Coverage:** 94% ✓ (≥80% required)
 
-**Mode**: strict  |  **Iterations**: 6
-**Tests**: Passed  |  **Coverage**: 94%
-**Linked issues**: fixes #42
+Linked: fixes #42
 ```
 
 ## State Persistence
