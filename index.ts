@@ -420,8 +420,9 @@ export default function (pi: ExtensionAPI) {
 
 			gitCommit(`chore: workflow complete — ${w.projectName}`);
 
-			// Return minimal tool result — the banner appears after via sendMessage
-			return { content: [{ type: "text", text: "✅ Done. Summary follows." }], details: { workflow: w, summary: p.summary } };
+			// Return minimal tool result — banner fires via tool_result handler below
+			w._completePending = true; // signal for tool_result handler
+			return { content: [{ type: "text", text: "✅ Done." }], details: { workflow: w, summary: p.summary } };
 		},
 	});
 
@@ -439,9 +440,20 @@ export default function (pi: ExtensionAPI) {
 		].join("\n") };
 	});
 
-	// ---- Auto-detect test results ----
+	// ---- Auto-detect test results + completion banner ---
 
 	pi.on("tool_result", async (event, ctx) => {
+		if (!workflow?.active && !(workflow as any)?._banner) return;
+
+		// Completion banner: fired when workflow_complete tool returns
+		if (event.toolName === "workflow_complete" && (workflow as any)?._banner) {
+			const banner = (workflow as any)._banner as string;
+			(workflow as any)._banner = undefined;
+			(workflow as any)._completePending = false;
+			pi.sendMessage({ customType: "context-workflow", display: true, content: banner });
+			return;
+		}
+
 		if (!workflow?.active || workflow.stage !== "test") return;
 		const input = event.input as Record<string, unknown> | undefined;
 		const details = event.details as Record<string, unknown> | undefined;
