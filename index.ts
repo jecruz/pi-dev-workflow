@@ -420,9 +420,7 @@ export default function (pi: ExtensionAPI) {
 
 			gitCommit(`chore: workflow complete — ${w.projectName}`);
 
-			// Return minimal tool result — banner fires via tool_result handler below
-			w._completePending = true; // signal for tool_result handler
-			return { content: [{ type: "text", text: "✅ Done." }], details: { workflow: w, summary: p.summary } };
+			return { content: [{ type: "text", text: banner }], details: { workflow: w, summary: p.summary } };
 		},
 	});
 
