@@ -159,7 +159,7 @@ export default function (pi: ExtensionAPI) {
 			if (!projectName) projectName = generateName(spec);
 			// Strip @ prefix — pi shorthand, not a real filesystem path.
 			// Append project name so all files nest under one directory.
-			const base = customDir ? customDir.replace(/^@/, "") : "projects";
+			const base = customDir ? customDir.replace(/^@/, "").replace(/\/+$/, "") : "projects";
 			const projectDir = `${base}/${projectName}`;
 
 			// Create directory structure + package.json
@@ -260,7 +260,7 @@ export default function (pi: ExtensionAPI) {
 			switch (workflow.stage) {
 				case "write":
 					ns = "test"; msg = "✅ Code written!\n\n**Stage 2: 🧪 Testing**";
-					np = `Run the test suite: \`cd ${workflow.projectDir} && npx vitest run tests/\`. Call workflow_test_result with exit code.`;
+					np = `Run the test suite: \`cd ${workflow.projectDir} && npx vitest run\`. Call workflow_test_result with exit code.`;
 					cm = `wip: ${workflow.projectName} — implementation + tests`;
 					logStep("write", true, params.notes || "Implementation written");
 					break;
@@ -270,7 +270,7 @@ export default function (pi: ExtensionAPI) {
 						logStep("test", true, "Tests passing");
 						if (isQuick) {
 							ns = "verify"; msg = "✅ Tests passed! (quick mode)\n\n**Stage 3: ✅ Verification**";
-							np = "Run verification: \`cd ${workflow.projectDir}\`, then tests → workflow_test_result, then \`npx vitest run --coverage\` → workflow_verify_result (coveragePct). Then call workflow_complete with summary.";
+							np = `Run verification: \`cd ${workflow.projectDir} && npx vitest run\` → workflow_test_result, then \`cd ${workflow.projectDir} && npx vitest run --coverage\` → workflow_verify_result (coveragePct). Then call workflow_complete with summary.`;
 						} else {
 							ns = "review"; msg = "✅ Tests passed!\n\n**Stage 3: 🔍 Review**";
 							const checklist = buildChecklist(workflow.spec);
@@ -291,7 +291,7 @@ export default function (pi: ExtensionAPI) {
 					if (workflow.reviewIssues.length === 0) {
 						logStep("review", true, "No issues found");
 						ns = "verify"; msg = "✅ Review passed!\n\n**Stage 5: ✅ Verification**";
-						np = "Run verification: tests → workflow_test_result, then coverage → workflow_verify_result (coveragePct)." +
+						np = `Run verification: \`cd ${workflow.projectDir} && npx vitest run\` → workflow_test_result, then \`cd ${workflow.projectDir} && npx vitest run --coverage\` → workflow_verify_result (coveragePct).` +
 							(workflow.mode === "strict" ? " ⚠️ STRICT: coverage ≥90% required." : "") +
 							"\n\nThen call workflow_complete with summary.";
 					} else {
@@ -479,6 +479,20 @@ export default function (pi: ExtensionAPI) {
 			"Follow workflow instructions. Call the appropriate tool when done.",
 			"---",
 		].join("\n") };
+	});
+
+	// ---- Directory enforcement — all commands scoped to project dir ----
+
+	pi.on("before_agent_start", async (event, _ctx) => {
+		if (!workflow?.active) return;
+		// Inject project-dir context so bash/vitest commands stay scoped
+		event.prompt = [
+			`⚠️ Working directory is \`${workflow.projectDir}\`. ALL file paths and commands must use this as the root.`,
+			`For ANY bash command: \`cd ${workflow.projectDir} && <your command>\`.`,
+			"Never run vitest, npm, or node from outside this directory.",
+			"",
+			event.prompt,
+		].join("\n");
 	});
 
 	// ---- Auto-detect test results ----
