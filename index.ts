@@ -162,11 +162,13 @@ export default function (pi: ExtensionAPI) {
 			const base = customDir ? customDir.replace(/^@/, "") : "projects";
 			const projectDir = `${base}/${projectName}`;
 
-			// Create directory structure
+			// Create directory structure + package.json
 			try {
-				const { mkdir } = await import("node:fs/promises");
+				const { mkdir, writeFile } = await import("node:fs/promises");
 				await mkdir(`${projectDir}/src`, { recursive: true });
 				await mkdir(`${projectDir}/tests`, { recursive: true });
+				const pkg = { name: projectName, private: true, type: "module" };
+				await writeFile(`${projectDir}/package.json`, JSON.stringify(pkg, null, 2), "utf-8");
 			} catch { /* best-effort */ }
 
 			workflow = {
@@ -193,10 +195,11 @@ export default function (pi: ExtensionAPI) {
 
 			pi.sendUserMessage(
 				[
-					`Implement this feature. Create files in \`${projectDir}/\` with standard structure:`,
-					`- \`${projectDir}/src/<module>.ts\` — implementation`,
-					`- \`${projectDir}/tests/<module>.test.ts\` — vitest tests`,
+					`Implement this feature inside \`${projectDir}/\`. First \`cd ${projectDir}\`, then create:`,
+					`- \`src/<module>.ts\` — implementation`,
+					`- \`tests/<module>.test.ts\` — vitest tests`,
 					"",
+					"Run \`npm install\` inside the project dir if deps needed. Keep ALL artifacts within \`${projectDir}/\`.",
 					"Create comprehensive tests. When done, call workflow_next.",
 				].join("\n"),
 				{ deliverAs: "followUp" },
@@ -257,7 +260,7 @@ export default function (pi: ExtensionAPI) {
 			switch (workflow.stage) {
 				case "write":
 					ns = "test"; msg = "✅ Code written!\n\n**Stage 2: 🧪 Testing**";
-					np = `Run the test suite: \`npx vitest run ${workflow.projectDir}/tests/\`. Call workflow_test_result with exit code.`;
+					np = `Run the test suite: \`cd ${workflow.projectDir} && npx vitest run tests/\`. Call workflow_test_result with exit code.`;
 					cm = `wip: ${workflow.projectName} — implementation + tests`;
 					logStep("write", true, params.notes || "Implementation written");
 					break;
@@ -267,7 +270,7 @@ export default function (pi: ExtensionAPI) {
 						logStep("test", true, "Tests passing");
 						if (isQuick) {
 							ns = "verify"; msg = "✅ Tests passed! (quick mode)\n\n**Stage 3: ✅ Verification**";
-							np = "Run verification: tests → workflow_test_result, then `npx vitest run --coverage` → workflow_verify_result (coveragePct). Then call workflow_complete with summary.";
+							np = "Run verification: \`cd ${workflow.projectDir}\`, then tests → workflow_test_result, then \`npx vitest run --coverage\` → workflow_verify_result (coveragePct). Then call workflow_complete with summary.";
 						} else {
 							ns = "review"; msg = "✅ Tests passed!\n\n**Stage 3: 🔍 Review**";
 							const checklist = buildChecklist(workflow.spec);
