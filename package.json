@@ -1,6 +1,6 @@
 {
   "name": "@jecruz/pi-dev-workflow",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Multi-stage development workflow for pi — automated write/test/review/fix/verify cycle with coverage gates and auto-commits",
   "keywords": [
     "pi-package",
