@@ -14,7 +14,10 @@
   ],
   "license": "MIT",
   "author": "Jeffrey Cruz",
-  "repository": "github.com/jecruz/pi-dev-workflow",
+  "repository": {
+    "type": "git",
+    "url": "github.com/jecruz/pi-dev-workflow"
+  },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
     "@sinclair/typebox": "*"
