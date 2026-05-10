@@ -1,5 +1,5 @@
 /**
- * Context-Isolated Workflow Extension — v5
+ * pi-dev-workflow — v6
  *
  * Pipeline: Write → Test → Review → Fix → Verify → Done
  *
@@ -15,7 +15,7 @@
  * Custom base via: in @path  or  at @path
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 type WorkflowStage = "write" | "test" | "review" | "fix" | "verify" | "done";

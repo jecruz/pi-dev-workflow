@@ -16,11 +16,14 @@
   "author": "Jeffrey Cruz",
   "repository": {
     "type": "git",
-    "url": "github.com/jecruz/pi-dev-workflow"
+    "url": "https://github.com/jecruz/pi-dev-workflow.git"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@sinclair/typebox": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "files": [
     "index.ts",
