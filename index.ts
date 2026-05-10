@@ -157,8 +157,10 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (!projectName) projectName = generateName(spec);
-			// Strip @ prefix — it's pi shorthand, not a real filesystem path
-			const projectDir = customDir.replace(/^@/, "") || `projects/${projectName}`;
+			// Strip @ prefix — pi shorthand, not a real filesystem path.
+			// Append project name so all files nest under one directory.
+			const base = customDir ? customDir.replace(/^@/, "") : "projects";
+			const projectDir = `${base}/${projectName}`;
 
 			// Create directory structure
 			try {
@@ -388,17 +390,31 @@ export default function (pi: ExtensionAPI) {
 			const covMet = w.coveragePct != null && w.coveragePct >= w.coverageThreshold;
 			const allGates = w.testsPassed && covMet;
 
-			// ---- Completion Banner (visible to user) ----
+			// Build completion message (shown as tool result)
+			const banner = [
+				"",
+				"═══ WORKFLOW COMPLETE ═══",
+				"",
+				`Project: ${w.projectName}`,
+				`${p.summary}`,
+				"",
+				`Mode: ${w.mode}  |  Iterations: ${w.iteration}`,
+				`Tests: ${w.testsPassed ? "✅ Passed" : "❌ Failed"}`,
+				`Type-check: ${tc}  |  Lint: ${ln}  |  Coverage: ${cv}${covMet ? "" : " ⚠️"}`,
+				`Review issues: ${w.reviewIssues.length} found, resolved`,
+				...(issues.length > 0 ? [`Linked: ${issues.join(", ")}`] : []),
+				"",
+				`📄 README: ${w.projectDir}/README.md`,
+				"",
+				"Start another with `/workflow [name] [quick|strict] <spec>`",
+				"═══════════════════════════",
+			].join("\n");
+
+			// Also send as display message (renders in chat if supported)
 			pi.sendMessage({
-				customType: "context-workflow", display: true, content: [
-					"## " + (allGates ? "✅" : "⚠️") + ` Workflow Complete — \`${w.projectName}\``,
-					"",
-					`**${p.summary}**`,
-					"",
-					`**Mode**: ${w.mode}  |  **Iterations**: ${w.iteration}`,
-					`**Tests**: ${w.testsPassed ? "Passed" : "Failed"}  |  **Coverage**: ${cv}${covMet ? "" : " ⚠️"}`,
-					...(issues.length > 0 ? [`**Linked issues**: ${issues.join(", ")}`] : []),
-				].join("\n"),
+				customType: "context-workflow",
+				display: true,
+				content: banner,
 			});
 
 			// ---- README.md ----
@@ -441,20 +457,7 @@ export default function (pi: ExtensionAPI) {
 
 			gitCommit(`chore: workflow complete — ${w.projectName}`);
 
-			return { content: [{ type: "text", text: [
-				(allGates ? "🎉" : "⚠️") + ` Workflow Complete — ${w.projectName}`,
-				"",
-				p.summary,
-				"",
-				"**Gates:**",
-				`- Tests: ${w.testsPassed ? "✅" : "❌"}  |  Coverage: ${cv} (≥${w.coverageThreshold}%)`,
-				`- Review issues: ${w.reviewIssues.length} resolved`,
-				"",
-				`📄 README: \`${w.projectDir}/README.md\``,
-				...(issues.length > 0 ? [`🔗 Linked: ${issues.join(", ")}`] : []),
-				"",
-				"Start another with `/workflow [name] [quick|strict] <spec>`",
-			].join("\n") }], details: { workflow: w, summary: p.summary } };
+			return { content: [{ type: "text", text: banner }], details: { workflow: w, summary: p.summary } };
 		},
 	});
 
